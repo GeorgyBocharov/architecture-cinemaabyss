@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"events/app"
 	"fmt"
 
 	"log"
@@ -9,8 +10,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
-
 
 // Models
 type User struct {
@@ -46,6 +47,22 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+	kafkaServers := os.Getenv("KAFKA_BROKERS")
+	config := &app.Config {
+		PaymentsTopic: os.Getenv("PAYMENT_TOPIC"),
+		UsersTopic: os.Getenv("USER_TOPIC"),
+		MovesTopic: os.Getenv("MOVIE_TOPIC"),
+		ConsumerConfig: map[string]interface{} {
+			"bootstrap.servers": kafkaServers,
+			"group.id": "test",
+		},
+		ProducerConfig: map[string]interface{} {
+			"bootstrap.servers": kafkaServers,
+		},
+	}
+
+
+
 	log.Printf("Starting server on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

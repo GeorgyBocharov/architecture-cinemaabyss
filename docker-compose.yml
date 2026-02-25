@@ -96,6 +96,9 @@ services:
     environment:
       PORT: 8082
       KAFKA_BROKERS: kafka:9092
+      PAYMENT_TOPIC: payment-events
+      USER_TOPIC: user-events
+      MOVIE_TOPIC: movie-events
     networks:
       - cinemaabyss-network
 
