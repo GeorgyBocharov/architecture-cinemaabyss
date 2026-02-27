@@ -1,143 +1,200 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"events/app"
-	"fmt"
-
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	kafkaAdapter "events/adapters/kafka"
 )
 
-// Models
-type User struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-}
 
-type Movie struct {
-	ID          int      `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Genres      []string `json:"genres"`
-	Rating      float64  `json:"rating"`
+type ConsumerInfo struct {
+	Name     string
+	Consumer *kafkaAdapter.Consumer
 }
-
-type Payment struct {
-	ID        int       `json:"id"`
-	UserID    int       `json:"user_id"`
-	Amount    float64   `json:"amount"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
 
 func main() {
-	// Set up HTTP routes
-	http.HandleFunc("/api/users", handleUsers)
-	http.HandleFunc("/api/movies", handleMovies)
-	http.HandleFunc("/api/payments", handlePayments)
+	config := loadConfig()
+	
+	container := initContainer(config)
+	defer container.Producer.Close()
 
-	// Start server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := setupSignalHandler()
+
+	wg := startServices(ctx, container)
+
+	<-sigChan
+	log.Println("Received shutdown signal. Initiating graceful shutdown...")
+
+	gracefulShutdown(ctx, cancel, container, wg)
+}
+
+func loadConfig() *app.Config {
+	kafkaServers := os.Getenv("KAFKA_BROKERS")
+	
+	return &app.Config{
+		PaymentsTopic: os.Getenv("PAYMENT_TOPIC"),
+		UsersTopic:    os.Getenv("USER_TOPIC"),
+		MoviesTopic:   os.Getenv("MOVIE_TOPIC"),
+		Port: getPort(),
+		ConsumerPollTimeout: 100, 
+		
+		PaymentsConsumerConfig: map[string]interface{}{
+			"bootstrap.servers": kafkaServers,
+			"group.id":          "payments-consumer",
+			"enable.auto.commit": true,
+			"auto.offset.reset": "earliest",
+		},
+		UsersConsumerConfig: map[string]interface{}{
+			"bootstrap.servers": kafkaServers,
+			"group.id":          "users-consumer",
+			"enable.auto.commit": true,
+			"auto.offset.reset": "earliest",
+		},
+		MoviesConsumerConfig: map[string]interface{}{
+			"bootstrap.servers": kafkaServers,
+			"group.id":          "movies-consumer",
+			"enable.auto.commit": true,
+			"auto.offset.reset": "earliest",
+		},
+		ProducerConfig: map[string]interface{}{
+			"bootstrap.servers":  kafkaServers,
+			"message.timeout.ms": 10000,
+			"acks":               "all",
+		},
+	}
+}
+
+func initContainer(config *app.Config) *app.Container {
+	container := &app.Container{
+		Config: config,
+	}
+
+	if err := container.Init(); err != nil {
+		log.Fatalf("failed to init container: %v", err)
+	}
+
+	return container
+}
+
+func setupSignalHandler() <-chan os.Signal {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	return sigChan
+}
+
+func startServices(ctx context.Context, container *app.Container) *sync.WaitGroup {
+	var wg sync.WaitGroup
+
+	startConsumers(ctx, &wg, container)
+
+	startHTTPServer(&wg, container)
+
+	log.Println("All services started. Press Ctrl+C to stop...")
+	return &wg
+}
+
+func startConsumers(ctx context.Context, wg *sync.WaitGroup, container *app.Container) {
+	consumers := []ConsumerInfo{
+		{"Payments", container.PaymentsConsumer},
+		{"Movies", container.MoviesConsumer},
+		{"Users", container.UsersConsumer},
+	}
+
+	for _, ci := range consumers {
+		if ci.Consumer == nil {
+			log.Printf("Warning: %s consumer is nil, skipping", ci.Name)
+			continue
+		}
+
+		wg.Add(1)
+		go runConsumer(ctx, wg, ci.Name, ci.Consumer)
+	}
+}
+
+func runConsumer(ctx context.Context, wg *sync.WaitGroup, name string, consumer *kafkaAdapter.Consumer) {
+	defer wg.Done()
+	
+	log.Printf("Starting %s consumer...", name)
+	
+	if err := consumer.Consume(ctx); err != nil {
+		log.Printf("%s consumer stopped with error: %v", name, err)
+	} else {
+		log.Printf("%s consumer stopped gracefully", name)
+	}
+}
+
+func startHTTPServer(wg *sync.WaitGroup, container *app.Container) {
+	port := getPort()
+	
+	http.HandleFunc("/api/users", container.UsersHandler.Handle)
+	http.HandleFunc("/api/movies", container.MoviesHandler.Handle)
+	http.HandleFunc("/api/payments", container.PaymentsHandler.Handle)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Printf("Starting HTTP server on port %s", port)
+		
+		if err := container.HTTPServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
+
+}
+
+func getPort() string {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	kafkaServers := os.Getenv("KAFKA_BROKERS")
-	config := &app.Config {
-		PaymentsTopic: os.Getenv("PAYMENT_TOPIC"),
-		UsersTopic: os.Getenv("USER_TOPIC"),
-		MovesTopic: os.Getenv("MOVIE_TOPIC"),
-		ConsumerConfig: map[string]interface{} {
-			"bootstrap.servers": kafkaServers,
-			"group.id": "test",
-		},
-		ProducerConfig: map[string]interface{} {
-			"bootstrap.servers": kafkaServers,
-		},
-	}
-
-
-
-	log.Printf("Starting server on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	return port
 }
 
-func handleUsers(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
-		createUser(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
+func gracefulShutdown(ctx context.Context, cancel context.CancelFunc, container *app.Container, wg *sync.WaitGroup) {
+	shutdownHTTPServer(container)
+
+	cancel()
+
+	waitForShutdown(wg)
 }
 
-
-
-// Movie handlers
-func handleMovies(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
-		createMovie(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// Payment handlers
-func handlePayments(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
-		createPayment(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-
-func createUser(w http.ResponseWriter, r *http.Request) {
-	var u User
-	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+func shutdownHTTPServer(container *app.Container) {
+	if container.HTTPServer == nil {
 		return
 	}
 
-	fmt.Printf("creating user %v\n", u)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(u)
+	log.Println("Shutting down HTTP server...")
+	if err := container.HTTPServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
 }
 
-func createMovie(w http.ResponseWriter, r *http.Request) {
-	var m Movie
-	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+func waitForShutdown(wg *sync.WaitGroup) {
+	done := make(chan struct{})
+	
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All services closed successfully")
+	case <-time.After(10 * time.Second):
+		log.Println("Timeout waiting for services to close")
 	}
-
-	fmt.Printf("creating movie %v\n", m)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(m)
-}
-
-func createPayment(w http.ResponseWriter, r *http.Request) {
-	var p Payment
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	fmt.Printf("creating payment %v\n", p)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(p)
 }

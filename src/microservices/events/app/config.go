@@ -1,14 +1,17 @@
 package app
 
-import (
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-)
 
 type Config struct {
 	PaymentsTopic string
 	UsersTopic    string
-	MovesTopic    string
+	MoviesTopic   string
 
-	ConsumerConfig map[string]interface{}
+	Port string
+
+	ConsumerPollTimeout int
+
+	PaymentsConsumerConfig map[string]interface{}
+	UsersConsumerConfig map[string]interface{}
+	MoviesConsumerConfig map[string]interface{}
 	ProducerConfig map[string]interface{}
 }

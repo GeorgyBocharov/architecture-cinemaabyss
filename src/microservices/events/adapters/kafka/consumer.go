@@ -29,6 +29,8 @@ func NewConsumer(topic string, pollTimeout int, consumer *kafka.Consumer, proces
 }
 
 func (c *Consumer) Consume(ctx context.Context) error {
+	defer c.consumer.Close()
+	
 	err := c.consumer.Subscribe(c.topic, nil) 
 	if err != nil {
 		return err
