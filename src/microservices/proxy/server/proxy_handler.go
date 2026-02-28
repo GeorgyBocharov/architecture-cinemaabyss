@@ -6,58 +6,28 @@ import (
 	"log"
 	"math/rand/v2"
 	"net/http"
-	"strings"
 )
 
 type (
 	ProxyHandler interface {
-		IsApplicable(r *http.Request) bool
 		Handle(w http.ResponseWriter, r *http.Request)
 	}
 	DualPercentageProxyHandler struct {
 		firstURL   string
 		secondURL  string
-		prefix     string
 		percentage int
 	}
 	BasicProxyHandler struct {
-		prefix     string
 		proxyURL string
-	}
-	CompositeProxyHandler struct {
-		handlers []ProxyHandler
 	}
 )
 
-func NewCompositeProxyHandler(handlers []ProxyHandler) *CompositeProxyHandler {
-	return &CompositeProxyHandler{
-		handlers: handlers,
-	}
-}
-
-func (p *CompositeProxyHandler) Handle(w http.ResponseWriter, r *http.Request) {
-	for _, handler := range p.handlers {
-		if handler.IsApplicable(r) {
-			handler.Handle(w, r)
-		}
-	}
-}
-
-func NewDualPercentageProxyHandler(firstURL, secondURL, prefix string, percentage int) *DualPercentageProxyHandler {
+func NewDualPercentageProxyHandler(firstURL, secondURL string, percentage int) *DualPercentageProxyHandler {
 	return &DualPercentageProxyHandler{
-		prefix:     prefix,
 		firstURL:   firstURL,
 		secondURL:  secondURL,
 		percentage: percentage,
 	}
-}
-
-func (p *DualPercentageProxyHandler) IsApplicable(r *http.Request) bool {
-	if !strings.HasPrefix(r.URL.Path, p.prefix) {
-		return false
-	}
-
-	return true
 }
 
 func (p *DualPercentageProxyHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -73,19 +43,10 @@ func (p *DualPercentageProxyHandler) resolveHost() string {
 	return p.secondURL
 }
 
-func NewBasicProxyHandler(proxyURL, prefix string) *BasicProxyHandler {
+func NewBasicProxyHandler(proxyURL string) *BasicProxyHandler {
 	return &BasicProxyHandler{
-		prefix:     prefix,
 		proxyURL:   proxyURL,
 	}
-}
-
-func (p *BasicProxyHandler) IsApplicable(r *http.Request) bool {
-	if !strings.HasPrefix(r.URL.Path, p.prefix) {
-		return false
-	}
-
-	return true
 }
 
 func (p *BasicProxyHandler) Handle(w http.ResponseWriter, r *http.Request) {

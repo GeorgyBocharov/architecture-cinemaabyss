@@ -49,5 +49,6 @@ func (p *UsersHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	
 
 	w.WriteHeader(http.StatusCreated)
+	encodeSuccessStatus(w)
 }
 

@@ -24,6 +24,7 @@ type Container struct {
 	UserProducer *kafkaAdapter.Producer[entities.User]
 
 	PaymentsHandler HttpHandler
+	HealthcheckHandler HttpHandler
 	MoviesHandler HttpHandler
 	UsersHandler HttpHandler
 
@@ -63,6 +64,7 @@ func (c *Container) registerHttpHandlers() {
 	c.PaymentsHandler = server.NewPaymentsHandler(c.PaymentsProducer)
 	c.MoviesHandler = server.NewMoviesHandler(c.MoviesProducer)
 	c.UsersHandler = server.NewUsersHandler(c.UserProducer)
+	c.HealthcheckHandler = &server.HealthcheckHandler{}
 }
 
 func (c *Container) registerProducers() error {

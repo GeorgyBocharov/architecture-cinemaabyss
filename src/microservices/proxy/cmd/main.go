@@ -7,23 +7,27 @@ import (
 	"os"
 	"proxy/server"
 	"strconv"
-)
-
-const(
-	MOVIES_API_PREFIX = "/api/movies"
+	"encoding/json"
 )
 
 func main() {
-	compositeHandler, err := provideProxyHandler()
+	moviesHandler, err := provideMoviesProxyHandler()
 	if err != nil {
-		log.Fatalf("failed to create proxyHandler: %v\n", err)
+		log.Fatalf("failed to create movies proxyHandler: %v\n", err)
+	}
+	usersProxyHandler, err := provideUsersProxyHandler()
+	if err != nil {
+		log.Fatalf("failed to create users proxyHandler: %v\n", err)
 	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	http.HandleFunc("/api/movies", compositeHandler.Handle)
+	http.HandleFunc("/api/movies", moviesHandler.Handle)
+	http.HandleFunc("/api/users", usersProxyHandler.Handle)
+	http.HandleFunc("/health", healthHandler)
+
 	log.Printf("Starting server on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
@@ -63,7 +67,21 @@ func getEnvInt(key string, defaultValue int) (int, error) {
 	return res, nil
 }
 
-func provideProxyHandler() (*server.CompositeProxyHandler, error) {
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"status": true})
+}
+
+func provideUsersProxyHandler() (server.ProxyHandler, error) {
+	monolithURL := getEnv("MONOLITH_URL", "")
+	if monolithURL == "" {
+		return nil, fmt.Errorf("uncpecified MONOLITH_URL")
+	}
+
+	return  server.NewBasicProxyHandler(monolithURL), nil
+}
+
+func provideMoviesProxyHandler() (server.ProxyHandler, error) {
 	percentage, err :=  getEnvInt("MOVIES_MIGRATION_PERCENT", 0)
 	if err != nil {
 		return nil, err
@@ -77,9 +95,7 @@ func provideProxyHandler() (*server.CompositeProxyHandler, error) {
 		return nil, err
 	}
 	if !gradualMigrationEnabled {
-		return  server.NewCompositeProxyHandler([]server.ProxyHandler {
-			server.NewBasicProxyHandler(monolithURL, MOVIES_API_PREFIX),
-		}), nil
+		return  server.NewBasicProxyHandler(monolithURL), nil
 	}
 
 	moviesURL := getEnv("MOVIES_SERVICE_URL", "")
@@ -87,12 +103,9 @@ func provideProxyHandler() (*server.CompositeProxyHandler, error) {
 		return nil, fmt.Errorf("uncpecified MOVIES_SERVICE_URL")
 	}
 
-	return server.NewCompositeProxyHandler([]server.ProxyHandler {
-		server.NewDualPercentageProxyHandler(
+	return server.NewDualPercentageProxyHandler(
 			moviesURL,
 			monolithURL,
-			MOVIES_API_PREFIX,
 			percentage,
-		),
-	}), nil
+		), nil
 }

@@ -49,5 +49,10 @@ func (p *MoviesHandler) createMovie(w http.ResponseWriter, r *http.Request) {
 	
 
 	w.WriteHeader(http.StatusCreated)
+	encodeSuccessStatus(w)
 }
 
+func encodeSuccessStatus(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}

@@ -137,9 +137,10 @@ func runConsumer(ctx context.Context, wg *sync.WaitGroup, name string, consumer 
 func startHTTPServer(wg *sync.WaitGroup, container *app.Container) {
 	port := getPort()
 	
-	http.HandleFunc("/api/users", container.UsersHandler.Handle)
-	http.HandleFunc("/api/movies", container.MoviesHandler.Handle)
-	http.HandleFunc("/api/payments", container.PaymentsHandler.Handle)
+	http.HandleFunc("/api/events/user", container.UsersHandler.Handle)
+	http.HandleFunc("/api/events/movie", container.MoviesHandler.Handle)
+	http.HandleFunc("/api/events/payment", container.PaymentsHandler.Handle)
+	http.HandleFunc("/api/events/health", container.HealthcheckHandler.Handle)
 
 	wg.Add(1)
 	go func() {
