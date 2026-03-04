@@ -29,12 +29,6 @@ spec:
         env:
         - name: PORT
           value: "8082"
-        - name: PAYMENT_TOPIC
-          value: payment-events
-        - name: USER_TOPIC
-          value: user-events
-        - name: MOVIE_TOPIC
-          value: movie-events
         envFrom:
         - configMapRef:
             name: cinemaabyss-config

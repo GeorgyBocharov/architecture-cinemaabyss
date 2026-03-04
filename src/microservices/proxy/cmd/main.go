@@ -25,7 +25,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
-
 func getEnv(key, defaultValue string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -60,8 +59,8 @@ func getEnvInt(key string, defaultValue int) (int, error) {
 	return res, nil
 }
 
-func provideCompositeProxyHandler() (server.ProxyHandler, error) {
-	percentage, err :=  getEnvInt("MOVIES_MIGRATION_PERCENT", 0)
+func provideCompositeProxyHandler() (server.HttpHandler, error) {
+	percentage, err := getEnvInt("MOVIES_MIGRATION_PERCENT", 0)
 	if err != nil {
 		return nil, err
 	}
@@ -76,10 +75,9 @@ func provideCompositeProxyHandler() (server.ProxyHandler, error) {
 	basicHandler := server.NewBasicProxyHandler(monolithURL)
 
 	if !gradualMigrationEnabled {
-		return server.NewCompositeHandler(server.NewUrlBasedProxyHandlerProvider(
-			map[string]server.ProxyHandler{
-				"/health": &server.HealthCheckHandler{},
-			},
+		return server.NewCompositeHandler(server.NewCompositeHandlerProvider(
+			"/health",
+			&server.HealthCheckHandler{},
 			basicHandler,
 		)), nil
 	}
@@ -95,11 +93,11 @@ func provideCompositeProxyHandler() (server.ProxyHandler, error) {
 		percentage,
 	)
 
-	return server.NewCompositeHandler(server.NewUrlBasedProxyHandlerProvider(
-			map[string]server.ProxyHandler{
-				"/health": &server.HealthCheckHandler{},
-				"/api/movies": moviesProxy,
-			},
+	return server.NewCompositeHandler(
+		server.NewCompositeHandlerProvider(
+			"/health",
+			&server.HealthCheckHandler{},
 			basicHandler,
+			server.WithProxy("/api/movies", moviesProxy),
 		)), nil
 }

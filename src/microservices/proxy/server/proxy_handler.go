@@ -2,15 +2,15 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log"
 	"math/rand/v2"
 	"net/http"
-	"encoding/json"
 )
 
 type (
-	ProxyHandler interface {
+	HttpHandler interface {
 		Handle(w http.ResponseWriter, r *http.Request)
 	}
 	DualPercentageProxyHandler struct {
@@ -22,10 +22,9 @@ type (
 		proxyURL string
 	}
 	ProxyHandlerProvider interface {
-		PorvideByRequest(r *http.Request) ProxyHandler
+		PorvideByRequest(r *http.Request) HttpHandler
 	}
 	HealthCheckHandler struct {
-
 	}
 	CompositeHandler struct {
 		provider ProxyHandlerProvider
@@ -44,7 +43,6 @@ func (p *DualPercentageProxyHandler) Handle(w http.ResponseWriter, r *http.Reque
 	proxyRequest(p.resolveHost(), w, r)
 }
 
-
 func (p *DualPercentageProxyHandler) resolveHost() string {
 	randValue := rand.IntN(100)
 	if randValue < p.percentage {
@@ -55,7 +53,7 @@ func (p *DualPercentageProxyHandler) resolveHost() string {
 
 func NewBasicProxyHandler(proxyURL string) *BasicProxyHandler {
 	return &BasicProxyHandler{
-		proxyURL:   proxyURL,
+		proxyURL: proxyURL,
 	}
 }
 
@@ -84,7 +82,6 @@ func (p *CompositeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "failure"})
 	}
 }
-
 
 func proxyRequest(targetHost string, w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
