@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -49,21 +50,32 @@ func WithProxy(prefix string, proxyHandler HttpHandler) CompositeHandlerProvider
 }
 
 func NewCompositeHandlerProvider(healthURL string, healthHandle, defaultHandler HttpHandler, options ...CompositeHandlerProviderOption) *CompositeHandlerProvider {
-	return &CompositeHandlerProvider{
+	r := &CompositeHandlerProvider{
 		isProxyEnabled: false,
 		healthURL:  healthURL,
 		healthHandle:  healthHandle,
 		defaultHandler:  defaultHandler,
 	}
+	for _, option := range options {
+		r = option(r)
+	}
+
+	return r
 }
 
 func (p *CompositeHandlerProvider) PorvideByRequest(r *http.Request) HttpHandler {
+	fmt.Printf("searching handler for url %s, proxyIsEnabled = %v\n", r.URL.Path, p.isProxyEnabled)
 	if r.URL.Path == p.healthURL {
+		fmt.Println("returning healthHandler")
+
 		return p.healthHandle
 	}
 	if p.isProxyEnabled && strings.HasPrefix(r.URL.Path, p.proxyURLPrefix) {
+		fmt.Println("returning proxyHandler")
+
 		return p.proxyHandler
 	}
+	fmt.Println("returning defaultHandler")
 
 	return p.defaultHandler
 }
