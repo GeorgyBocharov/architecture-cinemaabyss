@@ -3,9 +3,9 @@ $DOCKER_CONFIG_PATH = "..\..\.docker\config.json"
 $SECRET_NAME = "dockerconfigjson"
 
 
-kubectl create secret generic ghcr-pull-secret `
+kubectl create secret generic $SECRET_NAME `
     --namespace $NAMESPACE `
     --from-file=.dockerconfigjson=$DOCKER_CONFIG_PATH `
     --type=kubernetes.io/dockerconfigjson
 
-Write-Host "Секрет $SECRET_NAME создан в namespace: $NAMESPACE"
+Write-Host "Secret $SECRET_NAME created in namespace: $NAMESPACE"

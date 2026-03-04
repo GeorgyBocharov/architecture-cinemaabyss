@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: proxy-service
-        image: ghcr.io/georgybocharv/architecture-cinemaabyss/proxy-service:latest
+        image: ghcr.io/georgybocharov/architecture-cinemaabyss/proxy-service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -49,7 +49,7 @@ spec:
           periodSeconds: 10
         livenessProbe:
           httpGet:
-            path: /api/proxy/health
+            path: /health
             port: 8000
           initialDelaySeconds: 15
           periodSeconds: 20

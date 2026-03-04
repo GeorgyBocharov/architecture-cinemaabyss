@@ -10,4 +10,4 @@ kubectl create secret generic $SECRET_NAME \
     --from-file=.dockerconfigjson=$DOCKER_CONFIG_PATH \
     --type=kubernetes.io/dockerconfigjson
 
-echo "Секрет $SECRET_NAME создан в namespace: $NAMESPACE"
+echo "Secret $SECRET_NAME created in namespace: $NAMESPACE"
