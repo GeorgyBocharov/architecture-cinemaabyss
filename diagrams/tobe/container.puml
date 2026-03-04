@@ -8,6 +8,8 @@ Person(user, "User", "Клиент CinemaAbyss")
 
 System(cinemaabyss_aggregator, "CinemaAbyss Aggregator System", "Онлайн кинотеатр")
 System(cinemaabyss_billing, "CinemaAbyss Billing System", "Монетизация")
+System(user_management, "CinemaAbyss User Managements System", "Система управления пользователями")
+
 
 System_Ext(auth_provider, "Система аутентификации", "Keycloack")
 System_Ext(payment_service, "Система платежей")
@@ -21,6 +23,20 @@ Container(stv, "Smart TV/Android TV Apps", "Kotlin")
 
 
 Container(api_gateway, "API Gateway", "Nginx, KrakenD")
+
+System_Boundary(user_management, "User Management System") {
+    Container(user_service, "User Service", "Go", "Управление пользователями")
+    ContainerDb(user_db, "User DB", "PostgreSQL", "Данные пользователей")
+    
+    Container(user_events_bus, "User Events Bus", "Kafka", "События жизненного цикла пользователя")
+}
+
+' Связи User Management
+Rel(user_service, user_db, "CRUD", "TCP")
+Rel(user_service, user_events_bus, "публикация событий", "Kafka")
+
+' Аутентификация через внешнюю систему
+Rel(user_service, auth_provider, "синхронизация пользователей", "SCIM/HTTPS")
 
 System_Boundary(cinemaabyss_aggregator, "CinemaAbyss Aggregator System") {
     Container(bff, "BFF", "Go", "На самом деле тут отдельные bff для mobile, web, smart tv")
@@ -70,7 +86,6 @@ Rel(stv, content_cdn, "загрузка контента", "TCP")
 Rel(webApp, content_cdn, "загрузка контента", "TCP")
 
 
-BiRel(api_gateway, auth_provider, "Аутентификация", "REST/HTTPS")
 Rel(api_gateway, bff, "запросы мобильного устройства", "REST/HTTPS")
 
 Rel(audit_message_bus, recsys_adapter, "Отправка действий пользователя для построения рекомендаций", "REST/HTTPS")
@@ -103,10 +118,11 @@ Rel(bff, catalog, "Получение метаданных", "gRPC")
 Rel(bff, showcases, "Получение витрин", "gRPC")
 Rel(bff, user_library, "Сохранеие фильмов", "gRPC")
 Rel(bff, audit_message_bus, "Отправка действи пользователя", "Kafka")
+Rel(bff, user_service, "имя для отображения, авторизация", "gRPC")
+Rel(user_library, user_service, "проверка userId", "gRPC")
 
 
-
-Container_Boundary(cinemaabyss_billing, "CinemaAbyss Billing System") {
+System_Boundary(cinemaabyss_billing, "CinemaAbyss Billing System") {
     Container(bff_billing, "BFF Billing", "Go", "Агрегатор для клиентов")
     
     Container(subscriptions, "Subscriptions", "Go", "Каталог подписок")
@@ -117,9 +133,6 @@ Container_Boundary(cinemaabyss_billing, "CinemaAbyss Billing System") {
     
     Container(catalog_pricing, "Catalog Pricing", "Go", "Цены и правила")
     ContainerDb(catalog_pricing_db, "Pricing DB", "PostgreSQL")
-    
-    Container(user_profile, "User Profile", "Go", "Профили пользователей")
-    ContainerDb(user_profile_db, "Profile DB", "PostgreSQL")
     
     Container(orders, "Orders", "Go", "Управление заказами")
     ContainerDb(orders_db, "Orders DB", "PostgreSQL")
@@ -132,9 +145,12 @@ Container_Boundary(cinemaabyss_billing, "CinemaAbyss Billing System") {
 
 Rel(api_gateway, bff_billing, "Данные о подписке", "REST/HTTPS")
 
-Rel(bff_billing, user_profile, "данные профиля", "gRPC")
 Rel(bff_billing, entitlements, "проверка прав", "gRPC")
 Rel(bff_billing, orders, "создать заказ", "gRPC")
+
+' Billing System обращается к User Service
+Rel(bff_billing, user_service, "получить профиль", "gRPC")
+Rel(orders, user_service, "проверить пользователя", "gRPC")
 
 Rel(orders, subscriptions, "проверить подписку", "gRPC")
 Rel(orders, catalog_pricing, "рассчитать стоимость", "gRPC")
@@ -147,16 +163,18 @@ Rel(payments_adapter, payment_status_bus, "опубликовать статус
 Rel(payment_status_bus, orders, "обновить статус заказа", "Kafka")
 
 Rel(orders, billing_events_bus, "payment.succeeded", "Kafka")
-Rel(billing_events_bus, user_profile, "обновить подписку", "Kafka")
+Rel(billing_events_bus, subscriptions, "обновить подписку", "Kafka")
 Rel(billing_events_bus, entitlements, "обновить права", "Kafka")
 
 Rel(content_message_bus, catalog_pricing, "новый контент", "Kafka")
 Rel(audit_message_bus, entitlements, "обновить квоты", "Kafka")
 
-BiRel(user_profile, user_profile_db, "CRUD", "TCP")
 BiRel(entitlements, entitlements_db, "CRUD", "TCP")
 BiRel(catalog_pricing, catalog_pricing_db, "CRUD", "TCP")
 BiRel(subscriptions, subscriptions_db, "CRUD", "TCP")
+
+Rel(user_events_bus, entitlements, "очистка при удалении пользователя", "Kafka")
+Rel(user_events_bus, subscriptions, "очистка при удалении пользователя", "Kafka")
 
 
 @enduml

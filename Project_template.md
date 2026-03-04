@@ -439,3 +439,12 @@ https://cinemaabyss.example.com/api/movies
 kubectl delete all --all -n cinemaabyss
 kubectl delete namespace cinemaabyss
 ```
+
+## Результаты выполнения задания 4
+Сервисы развернуты в minikube с применением helm-чартов
+
+### скриншот результата helm install
+![Success helm install](screenshots\helm_install.png)
+
+### скриншот получения фильмов после установки через helm
+![get movies](screenshots\get_movies_after_helm_install.png)
