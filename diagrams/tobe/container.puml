@@ -1,0 +1,180 @@
+@startuml TOBE_CinemaAbyss_container
+
+title TOBE CinemaAbyss container diagramm
+
+!includeurl https://raw.githubusercontent.com/RicardoNiepel/C4-PlantUML/master/C4_Component.puml
+
+Person(user, "User", "Клиент CinemaAbyss")
+
+System(cinemaabyss_aggregator, "CinemaAbyss Aggregator System", "Онлайн кинотеатр")
+System(cinemaabyss_billing, "CinemaAbyss Billing System", "Монетизация")
+System(user_management, "CinemaAbyss User Managements System", "Система управления пользователями")
+
+
+System_Ext(auth_provider, "Система аутентификации", "Keycloack")
+System_Ext(payment_service, "Система платежей")
+System_Ext(ext_content_provider, "Поставщики контента")
+System_Ext(recommendations, "Система рекомендаций")
+System_Ext(content_cdn, "CDN с контентом")
+
+Container(mobileApp, "CinemaAbyss Mobile Application", "Kotlin, Swift")
+Container(webApp, "CinemaAbyss Web Application", "Node.js")
+Container(stv, "Smart TV/Android TV Apps", "Kotlin")
+
+
+Container(api_gateway, "API Gateway", "Nginx, KrakenD")
+
+System_Boundary(user_management, "User Management System") {
+    Container(user_service, "User Service", "Go", "Управление пользователями")
+    ContainerDb(user_db, "User DB", "PostgreSQL", "Данные пользователей")
+    
+    Container(user_events_bus, "User Events Bus", "Kafka", "События жизненного цикла пользователя")
+}
+
+' Связи User Management
+Rel(user_service, user_db, "CRUD", "TCP")
+Rel(user_service, user_events_bus, "публикация событий", "Kafka")
+
+' Аутентификация через внешнюю систему
+Rel(user_service, auth_provider, "синхронизация пользователей", "SCIM/HTTPS")
+
+System_Boundary(cinemaabyss_aggregator, "CinemaAbyss Aggregator System") {
+    Container(bff, "BFF", "Go", "На самом деле тут отдельные bff для mobile, web, smart tv")
+
+    Container(audit_message_bus, "Audit Message Bus", "Kafka")
+
+    Container(stats, "Stats", "Go", "Сервис сохранениея статистики")
+    ContainerDb(stats_db, "Stats DB", "Cassandra", "Хранение статистики")
+
+    Container(content_collector, "content-collector", "Go", "Сервис сбора метаданных контента")
+    Container(external_content_message_bus, "External Content Meta Message Bus", "Kafka")
+    Container(content_adapter, "content-adapter", "Go", "Сервис получения данных о новом контенте")
+
+    Container(user_library, "user-library", "Go", "Сервис управления фильмографией")
+    ContainerDb(user_library_db, "user-library DB", "PostgreSQL", "Хранение фильмографии")
+
+
+    Container(search_service, "Search Service", "Go", "Сервис поиска контента")
+    ContainerDb(search_db, "Search DB", "ElasticSearch", "БД для поиска")
+
+
+    Container(catalog, "catalog", "Go", "Сервис управления метадаными контента")
+    Container(content_message_bus, "Content Meta Message Bus", "Kafka")
+    ContainerDb(catalog_db, "Content_meta db", "PostgreSQL", "Метаданные каталога")
+
+    Container(showcases, "showcases", "Go", "Сервис формирования витрин")
+    ContainerDb(showcases_db, "showcases DB", "Cassandra", "База для хранения витрин")
+
+
+    Container(recsys_adapter, "Recomendations adpater", "Go")
+}
+
+
+
+
+Rel(user, mobileApp, "регистрация/управление")
+Rel(mobileApp, api_gateway, "управление медиатекой", "REST/HTTPS")
+
+Rel(user, stv, "регистрация/управление")
+Rel(stv, api_gateway, "управление медиатекой", "REST/HTTPS")
+
+Rel(user, webApp, "регистрация/управление")
+Rel(webApp, api_gateway, "управление медиатекой", "REST/HTTPS")
+
+Rel(mobileApp, content_cdn, "загрузка контента", "TCP")
+Rel(stv, content_cdn, "загрузка контента", "TCP")
+Rel(webApp, content_cdn, "загрузка контента", "TCP")
+
+
+Rel(api_gateway, bff, "запросы мобильного устройства", "REST/HTTPS")
+
+Rel(audit_message_bus, recsys_adapter, "Отправка действий пользователя для построения рекомендаций", "REST/HTTPS")
+Rel(recsys_adapter, recommendations, "получение рекомендаций", "REST/HTTPS")
+
+Rel(external_content_message_bus, catalog, "сохранение контента", "Kafka")
+BiRel(catalog, catalog_db, "работа с метаданными контента", "TCP")
+Rel(catalog_db, content_message_bus, "стриминг контента", "DB/CDC")
+
+Rel(content_collector, content_adapter, "Запрос нового контента", "gRPC")
+Rel(content_adapter, ext_content_provider, "Запрос нового контента","REST/HTTPS")
+Rel(content_collector, external_content_message_bus, "Отправка меты по контентку", "Kafka")
+
+Rel(content_message_bus, search_service, "Сохранение данных для поиска", "Kafka")
+BiRel(search_service, search_db, "работа с данными для поиска", "TCP")
+
+Rel(content_message_bus, showcases, "Получение новых данных для витрин", "Kafka")
+Rel(showcases, recsys_adapter, "Получение рекомендаций для формирования витрин", "gRPC")
+Rel(showcases, catalog, "Получение метаданных из каталога", "gRPC")
+BiRel(showcases, showcases_db, "Сохранение витрин", "TCP")
+
+Rel(audit_message_bus, user_library, "Сохранение истории просмотров", "Kafka")
+BiRel(user_library, user_library_db, "Работа с коллекцией пользователя", "TCP")
+
+Rel(audit_message_bus, stats, "Сохранение статистики", "Kafka")
+BiRel(stats, stats_db, "Сохранение статистики", "TCP")
+
+Rel(bff, search_service, "Поиск фильмов", "gRPC")
+Rel(bff, catalog, "Получение метаданных", "gRPC")
+Rel(bff, showcases, "Получение витрин", "gRPC")
+Rel(bff, user_library, "Сохранеие фильмов", "gRPC")
+Rel(bff, audit_message_bus, "Отправка действи пользователя", "Kafka")
+Rel(bff, user_service, "имя для отображения, авторизация", "gRPC")
+Rel(user_library, user_service, "проверка userId", "gRPC")
+
+
+System_Boundary(cinemaabyss_billing, "CinemaAbyss Billing System") {
+    Container(bff_billing, "BFF Billing", "Go", "Агрегатор для клиентов")
+    
+    Container(subscriptions, "Subscriptions", "Go", "Каталог подписок")
+    ContainerDb(subscriptions_db, "Subscriptions DB", "PostgreSQL")
+    
+    Container(entitlements, "Entitlements", "Go", "Права доступа")
+    ContainerDb(entitlements_db, "Entitlements DB", "PostgreSQL")
+    
+    Container(catalog_pricing, "Catalog Pricing", "Go", "Цены и правила")
+    ContainerDb(catalog_pricing_db, "Pricing DB", "PostgreSQL")
+    
+    Container(orders, "Orders", "Go", "Управление заказами")
+    ContainerDb(orders_db, "Orders DB", "PostgreSQL")
+    
+    Container(payments_adapter, "Payments Adapter", "Go", "Адаптер платежей")
+    
+    Container(payment_status_bus, "Payment Status Bus", "Kafka", "topic: billing.payments.status")
+    Container(billing_events_bus, "Billing Events Bus", "Kafka", "topic: billing.events")
+}
+
+Rel(api_gateway, bff_billing, "Данные о подписке", "REST/HTTPS")
+
+Rel(bff_billing, entitlements, "проверка прав", "gRPC")
+Rel(bff_billing, orders, "создать заказ", "gRPC")
+
+' Billing System обращается к User Service
+Rel(bff_billing, user_service, "получить профиль", "gRPC")
+Rel(orders, user_service, "проверить пользователя", "gRPC")
+
+Rel(orders, subscriptions, "проверить подписку", "gRPC")
+Rel(orders, catalog_pricing, "рассчитать стоимость", "gRPC")
+BiRel(orders, orders_db, "сохранить заказ/обновить статус", "TCP")
+Rel(orders, payments_adapter, "отправить в платежную систему", "Kafka")
+
+Rel(payments_adapter, payment_service, "провести платеж", "REST")
+Rel(payments_adapter, payment_status_bus, "опубликовать статус", "Kafka")
+
+Rel(payment_status_bus, orders, "обновить статус заказа", "Kafka")
+
+Rel(orders, billing_events_bus, "payment.succeeded", "Kafka")
+Rel(billing_events_bus, subscriptions, "обновить подписку", "Kafka")
+Rel(billing_events_bus, entitlements, "обновить права", "Kafka")
+
+Rel(content_message_bus, catalog_pricing, "новый контент", "Kafka")
+Rel(audit_message_bus, entitlements, "обновить квоты", "Kafka")
+
+BiRel(entitlements, entitlements_db, "CRUD", "TCP")
+BiRel(catalog_pricing, catalog_pricing_db, "CRUD", "TCP")
+BiRel(subscriptions, subscriptions_db, "CRUD", "TCP")
+
+Rel(user_events_bus, entitlements, "очистка при удалении пользователя", "Kafka")
+Rel(user_events_bus, subscriptions, "очистка при удалении пользователя", "Kafka")
+
+
+@enduml

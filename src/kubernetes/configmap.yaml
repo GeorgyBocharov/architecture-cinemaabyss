@@ -13,6 +13,12 @@ data:
   # Service URLs
   MONOLITH_URL: "http://monolith:8080"
   MOVIES_SERVICE_URL: "http://movies-service:8081"
+
+  #events configs
+  KAFKA_BROKERS: "kafka:9092"
+  PAYMENT_TOPIC: "payment-events"
+  USER_TOPIC: "user-events"
+  MOVIE_TOPIC: "movie-events"
   
   # Strangler Fig configuration
   GRADUAL_MIGRATION: "true"

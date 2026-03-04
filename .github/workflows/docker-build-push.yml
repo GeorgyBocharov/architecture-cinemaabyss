@@ -1,17 +1,29 @@
 name: Docker Build and Push
 
+# ТРИГГЕРЫ (СОБЫТИЯ) ЗАПУСКА
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - '.github/workflows/docker-build-push.yml'
-  release:
-    types: [published]
+  workflow_dispatch:  # Позволяет запускать workflow вручную из интерфейса GitHub.
+                      # Пустые параметры означают, что при ручном запуске
+                      # не требуется дополнительных параметров - просто кнопка "Run workflow"
+                      # тут можно также указать что при ручном запуске нужно указать параметры запуска
 
+  push:
+    branches: [ main ]  # Запуск при пуше в ветку main
+    paths:  # ФИЛЬТР ПУТЕЙ: workflow запустится ТОЛЬКО если изменения затронули:
+      - 'src/**'  # Любые файлы в папке src и её подпапках (код приложения)
+      - '.github/workflows/docker-build-push.yml'  # Или сам файл workflow
+
+  release:
+    types: [published]  # Запуск при публикации релиза на GitHub.
+                        # Срабатывает именно в момент публикации (не создания черновика).
+                        # Удобно для тегирования Docker образов версиями релиза.
+
+# ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ (доступны во всех jobs)
 env:
-  REGISTRY: ghcr.io
+  REGISTRY: ghcr.io  # GitHub Container Registry - реестр контейнеров от GitHub.
+                      # Альтернатива Docker Hub. Адрес ghcr.io = GitHub Container Registry.
+  
+  # Имена образов (будут опубликованы по адресу: ghcr.io/имя_пользователя/название_репозитория/имя_сервиса)
   MONOLITH_IMAGE_NAME: ${{ github.repository }}/monolith
   MOVIES_SERVICE_IMAGE_NAME: ${{ github.repository }}/movies-service
   EVENTS_SERVICE_IMAGE_NAME: ${{ github.repository }}/events-service
@@ -19,46 +31,66 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    runs-on: ubuntu-latest  # Используется стандартный GitHub-хостед раннер с Ubuntu
+    
+    permissions:  # РАЗРЕШЕНИЯ - система безопасности GitHub Actions
+      contents: read  # Разрешение читать содержимое репозитория (нужно для checkout)
+      packages: write  # Разрешение записывать в GitHub Packages (нужно для публикации в ghcr.io)
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3  # Клонирует репозиторий в раннер
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v2  # Buildx - продвинутая сборка докер имаджей. 
+        # В отличие от стандартного docker build, buildx позволяет собирать образы в параллели и кешировать слои. 
+        # Про кеширование: каждая команда в докер файле (BUILD, COPY,...) создает отдельный слой, из которых в итоге формируется образ
+        # Кеширование слоев позволяет не выпонять эти команды при пересборке, если результат их выполнения не изменится. 
+        # Детальное описание правила кеширования указано в cache-from и сcache-to
 
       - name: Log in to the Container registry
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}  # Логин происходит в ghcr.io (GitHub Container Registry)
+          username: ${{ github.actor }}  # Имя пользователя, запустившего workflow
+          password: ${{ secrets.GITHUB_TOKEN }}  # Специальный токен, который GitHub 
+                                                  # автоматически создает для каждого workflow
 
       - name: Extract metadata (tags, labels) for Monolith
-        id: meta-monolith
+        id: meta-monolith  # ID шага, чтобы ссылаться на его outputs
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.MONOLITH_IMAGE_NAME }}
-          tags: |
+          tags: |  # Генерация нескольких тегов для одного образа
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
             type=ref,event=branch
             latest
+          # подробнее про теги:\
+          # у кажого докер имаджа есть id, тег имаджа может быть плавающий (как ярлык) и ссылаться на разные имаджи
+          # type=semver,pattern={{version}} - Из тега релиза v1.2.3 создаст тег 1.2.3
+          # type=semver,pattern={{major}}.{{minor}}  # Из v1.2.3 создаст плавающий тег 1.2
+          # type=sha,format=short  # Из хэша коммита создаст тег sha-a1b2c3d (уникальный для коммита)
+          # type=ref,event=branch  # Создает тег с именем ветки (например, main) - плавающий
+          # Всегда добавляет тег latest (плавающий, указывает на последнюю версию)
+          # Лейблы генерируются автоматически (OCI стандарты):
+          # org.opencontainers.image.created - время сборки
+          # org.opencontainers.image.source - URL репозитория
+          # org.opencontainers.image.version - версия из тега
+          # org.opencontainers.image.revision - хэш коммита
+          # также можео явно задавать лейблы через поле labels: (аналогично tags)
 
       - name: Build and push Monolith Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./src/monolith
-          push: true
-          tags: ${{ steps.meta-monolith.outputs.tags }}
-          labels: ${{ steps.meta-monolith.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          context: ./src/monolith  # Путь к Dockerfile и контексту сборки
+          push: true  # Отправлять образ в registry после сборки
+          tags: ${{ steps.meta-monolith.outputs.tags }}  # Все сгенерированные теги
+          labels: ${{ steps.meta-monolith.outputs.labels }}  # Все сгенерированные лейблы
+          cache-from: type=gha  # используем кеш из GitHub Actions (ускоряет сборку)
+          cache-to: type=gha,mode=max  # Сохранять кеш в GitHub Actions.
+                                        # mode=max - кешировать все слои, даже неиспользуемые
 
       - name: Extract metadata (tags, labels) for Movies Service
         id: meta-movies
@@ -82,4 +114,46 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      
+      - name: Extract metadata (tags, labels) for Proxy Service
+        id: meta-proxy
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.PROXY_SERVICE_IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=ref,event=branch
+            latest
+
+      - name: Build and push Proxy Service Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/microservices/proxy
+          push: true
+          tags: ${{ steps.meta-proxy.outputs.tags }}
+          labels: ${{ steps.meta-proxy.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata (tags, labels) for Events Service
+        id: meta-events
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.EVENTS_SERVICE_IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=ref,event=branch
+            latest
+
+      - name: Build and push Events Service Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./src/microservices/events
+          push: true
+          tags: ${{ steps.meta-events.outputs.tags }}
+          labels: ${{ steps.meta-events.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
