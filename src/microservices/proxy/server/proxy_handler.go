@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand/v2"
 	"net/http"
+	"encoding/json"
 )
 
 type (
@@ -19,6 +20,15 @@ type (
 	}
 	BasicProxyHandler struct {
 		proxyURL string
+	}
+	ProxyHandlerProvider interface {
+		PorvideByRequest(r *http.Request) ProxyHandler
+	}
+	HealthCheckHandler struct {
+
+	}
+	CompositeHandler struct {
+		provider ProxyHandlerProvider
 	}
 )
 
@@ -52,6 +62,29 @@ func NewBasicProxyHandler(proxyURL string) *BasicProxyHandler {
 func (p *BasicProxyHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	proxyRequest(p.proxyURL, w, r)
 }
+
+func (p *HealthCheckHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"status": true})
+}
+
+func NewCompositeHandler(provider ProxyHandlerProvider) *CompositeHandler {
+	return &CompositeHandler{
+		provider: provider,
+	}
+}
+
+func (p *CompositeHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	handler := p.provider.PorvideByRequest(r)
+	if handler != nil {
+		handler.Handle(w, r)
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"status": "failure"})
+	}
+}
+
 
 func proxyRequest(targetHost string, w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
