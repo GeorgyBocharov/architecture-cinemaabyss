@@ -348,6 +348,16 @@ cat .docker/config.json | base64
 #### Шаг 3
 Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
 
+## Результаты выполнения задания 3
+Сервисы развернуты в minikube, тесты работают
+
+### скриншот результьтата тестов
+![Success tests report](screenshots\k8s_success_test_report.png)
+
+### скриншот логов events-service
+![Success tests report](screenshots\events_pod_logs_after_k8s_tests.png)
+
+
 
 # Задание 4
 Для простоты дальнейшего обновления и развертывания вам как архитектуру необходимо так же реализовать helm-чарты для прокси-сервиса и проверить работу 
